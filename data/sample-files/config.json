@@ -1,0 +1,15 @@
+{
+  "app_name": "MCP Explorer",
+  "version": "1.0.0",
+  "features": {
+    "file_server": true,
+    "calculator": true,
+    "notes": true,
+    "weather": false
+  },
+  "settings": {
+    "max_file_size": "10MB",
+    "allowed_extensions": [".txt", ".json", ".md", ".csv"],
+    "enable_logging": true
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "eventsource": "^4.0.0",
+    "ws": "^8.18.2"
+  }
+}

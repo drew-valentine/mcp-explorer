@@ -1,0 +1,25 @@
+{
+  "name": "mcp-explorer",
+  "version": "1.0.0",
+  "description": "Interactive Model Context Protocol explorer with real-time visualization",
+  "main": "index.js",
+  "scripts": {
+    "build": "npm run build:server && npm run build:client && npm run build:dashboard",
+    "build:server": "cd server && npm run build",
+    "build:client": "cd client && npm run build", 
+    "build:dashboard": "cd dashboard && npm run build",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:dashboard\"",
+    "dev:demo": "RUN_DEMO=true concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:dashboard\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev:dashboard": "cd dashboard && npm run dev",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install && cd ../dashboard && npm install",
+    "clean": "rm -rf node_modules server/node_modules client/node_modules dashboard/node_modules"
+  },
+  "keywords": ["mcp", "model-context-protocol", "anthropic", "explorer", "visualization"],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
