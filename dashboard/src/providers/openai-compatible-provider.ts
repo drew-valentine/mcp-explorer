@@ -180,27 +180,37 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     ];
   }
 
-  // Override health check - use a very simple approach that avoids CORS issues
+  // Real health check that makes an actual API call
   async healthCheck(): Promise<boolean> {
-    console.log(`🩺 Starting health check for ${this.name} at ${this.config.baseUrl}`);
-    console.log('🩺 This health check will NOT make any network requests to avoid CORS issues');
+    console.log(`🩺 Starting real health check for ${this.name} at ${this.config.baseUrl}`);
     
-    // For now, let's just validate that the config looks reasonable
-    // and skip the actual network test to avoid CORS preflight issues
     if (!this.config.baseUrl || !this.config.model) {
       console.log('❌ Health check failed: missing baseUrl or model');
       return false;
     }
     
     try {
-      // Parse the URL to make sure it's valid
-      const url = new URL(this.config.baseUrl);
-      console.log('✅ URL format is valid:', url.toString());
-      console.log('✅ Model is specified:', this.config.model);
-      console.log('✅ Configuration appears valid - health check passed');
-      return true;
+      console.log('🌐 Making real API call to test the connection...');
+      
+      // Make a simple "Hello" request to test the actual API
+      const response = await this.generateResponse([
+        { role: 'user', content: 'Hello! Please respond with just "Hi" to confirm you are working.' }
+      ]);
+      
+      console.log('✅ Health check API call successful:', response);
+      console.log('✅ Response content:', response.content);
+      
+      // Consider it successful if we got any response content
+      const isHealthy = !!(response && response.content && response.content.trim().length > 0);
+      console.log(`✅ Health check result: ${isHealthy ? 'PASSED' : 'FAILED'}`);
+      
+      return isHealthy;
     } catch (error) {
-      console.log('❌ Health check failed: invalid URL format', error);
+      console.log('❌ Health check failed with error:', error);
+      console.log('❌ Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       return false;
     }
   }

@@ -63,8 +63,8 @@ export const LLMProviderConfig: React.FC<Props> = ({
       setTestResult({ 
         success, 
         message: success 
-          ? 'Connection successful! Server is reachable.' 
-          : 'Connection failed. Please check if the server is running and the URL is correct.' 
+          ? 'Success! Made real API call to model and received response. LLM is working correctly.' 
+          : 'Test failed. Could not get response from model. Check server status and configuration.' 
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Connection failed';
@@ -358,7 +358,7 @@ export const LLMProviderConfig: React.FC<Props> = ({
               </div>
               
               <div className="text-xs text-gray-600 mb-2">
-                Validates configuration format. For local LLMs, ensure your server is running before using the AI Agent.
+                Makes a real API call to test the model. Ensure your server is running and properly configured before testing.
               </div>
               
               {testResult && (

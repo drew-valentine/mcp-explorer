@@ -137,7 +137,7 @@ export function useLLMProviders() {
   }, []);
 
   const testProvider = useCallback(async (config: LLMProviderConfig): Promise<boolean> => {
-    console.log('🔍 Testing provider:', config.name, 'Type:', config.type);
+    console.log('🔍 Testing provider with REAL API call:', config.name, 'Type:', config.type);
     console.log('📋 Config details:', JSON.stringify(config, null, 2));
     
     try {
@@ -147,14 +147,36 @@ export function useLLMProviders() {
       console.log('🔧 Initializing provider...');
       await provider.initialize(config);
       
-      console.log('❤️ Running health check...');
+      console.log('🌐 Making real API call to test model...');
       const healthResult = provider.healthCheck ? await provider.healthCheck() : true;
-      console.log('❤️ Health check result:', healthResult);
+      console.log('✅ Real API test result:', healthResult);
+      
+      if (healthResult) {
+        console.log('🎉 SUCCESS: Model responded correctly to test call!');
+      } else {
+        console.log('❌ FAILED: Model did not respond as expected');
+      }
       
       return healthResult;
     } catch (error) {
       console.error('❌ Provider test failed:', error);
-      console.error('❌ Error details:', {
+      
+      // Log specific error details for debugging
+      if (error instanceof Error) {
+        if (error.message.includes('fetch')) {
+          console.error('🌐 Network Error: Cannot connect to server');
+        } else if (error.message.includes('401')) {
+          console.error('🔐 Auth Error: Invalid API key or authentication');
+        } else if (error.message.includes('404')) {
+          console.error('🔍 Not Found: Model or endpoint not found');
+        } else if (error.message.includes('CORS')) {
+          console.error('🚫 CORS Error: Server not configured for browser requests');
+        } else {
+          console.error('💥 API Error:', error.message);
+        }
+      }
+      
+      console.error('❌ Full error details:', {
         message: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         name: error instanceof Error ? error.name : undefined
