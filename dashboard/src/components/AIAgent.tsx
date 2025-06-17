@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ServerStatus } from '../hooks/useWebSocket';
-import Anthropic from '@anthropic-ai/sdk';
+import { useLLMProviders } from '../hooks/useLLMProviders';
+import { LLMProviderConfig } from './LLMProviderConfig';
+import { LLMMessage, LLMTool } from '../types/llm-providers';
 
 interface Props {
   servers: ServerStatus[];
@@ -30,12 +32,6 @@ interface ToolResult {
   error?: string;
 }
 
-interface AnthropicConfig {
-  apiKey: string;
-  model: string;
-  maxTokens: number;
-}
-
 interface MCPTool {
   name: string;
   description: string;
@@ -49,38 +45,22 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
   const [isLoading, setIsLoading] = useState(false);
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
   const [toolsLoading, setToolsLoading] = useState(false);
-  const [configLoadedFromStorage, setConfigLoadedFromStorage] = useState(false);
-  const [config, setConfig] = useState<AnthropicConfig>(() => {
-    // Load saved config from localStorage
-    try {
-      const savedConfig = localStorage.getItem('anthropic-config');
-      if (savedConfig) {
-        const parsed = JSON.parse(savedConfig);
-        const loadedConfig = {
-          apiKey: parsed.apiKey || '',
-          model: parsed.model || 'claude-3-5-sonnet-20241022',
-          maxTokens: parsed.maxTokens || 4096,
-        };
-        
-        // Set flag if API key was loaded from storage
-        if (loadedConfig.apiKey) {
-          setConfigLoadedFromStorage(true);
-        }
-        
-        return loadedConfig;
-      }
-    } catch (error) {
-      console.warn('Failed to load saved Anthropic config:', error);
-    }
-    
-    // Default config if nothing saved
-    return {
-      apiKey: '',
-      model: 'claude-3-5-sonnet-20241022',
-      maxTokens: 4096,
-    };
-  });
+  
+  const {
+    providers,
+    activeProviderId,
+    activeProvider,
+    addProvider,
+    updateProvider,
+    removeProvider,
+    setActiveProvider,
+    testProvider,
+    createProviderFromPreset,
+    hasValidActiveProvider,
+  } = useLLMProviders();
+  
   const [showConfig, setShowConfig] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -90,15 +70,6 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  // Save config to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem('anthropic-config', JSON.stringify(config));
-    } catch (error) {
-      console.warn('Failed to save Anthropic config:', error);
-    }
-  }, [config]);
 
   // Track the last fetched server set to prevent duplicate fetches
   const lastFetchedServersRef = useRef<string>('');
@@ -158,23 +129,12 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
     return () => clearTimeout(timeoutId);
   }, [connectedServerNames, onListTools]);
 
-  // Get available tools from dynamically fetched tools
-  const getAvailableTools = () => {
+  // Convert MCP tools to LLM format
+  const convertToLLMTools = (): LLMTool[] => {
     return availableTools.map(tool => ({
-      name: `${tool.serverName}_${tool.name}`, // Prefix with server name for uniqueness
+      name: `${tool.serverName}_${tool.name}`,
       description: tool.description,
-      input_schema: tool.inputSchema,
-      serverName: tool.serverName,
-    }));
-  };
-
-  // Convert MCP tool schemas to Anthropic tool format
-  const convertToAnthropicTools = () => {
-    const availableTools = getAvailableTools();
-    return availableTools.map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      input_schema: tool.input_schema
+      inputSchema: tool.inputSchema,
     }));
   };
 
@@ -187,11 +147,11 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
     if (lowerPrompt.includes('weather')) {
       return {
         content: "I'll check the weather for you.",
-        tool_use: [
+        toolCalls: [
           {
             id: 'call_1',
             name: 'weather-server_get_weather',
-            input: {
+            arguments: {
               location: lowerPrompt.includes('london') ? 'London, UK' : 
                        lowerPrompt.includes('tokyo') ? 'Tokyo, Japan' :
                        lowerPrompt.includes('new york') ? 'New York, NY' : 'San Francisco, CA'
@@ -210,11 +170,11 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
         
         return {
           content: `I'll calculate that for you.`,
-          tool_use: [
+          toolCalls: [
             {
               id: 'call_1',
               name: `calculator-server_${operation}`,
-              input: { a, b }
+              arguments: { a, b }
             }
           ]
         };
@@ -224,11 +184,11 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
     if (lowerPrompt.includes('file') || lowerPrompt.includes('read')) {
       return {
         content: "I'll check the available files for you.",
-        tool_use: [
+        toolCalls: [
           {
             id: 'call_1',
             name: 'file-server_list_files',
-            input: {}
+            arguments: {}
           }
         ]
       };
@@ -237,85 +197,54 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
     if (lowerPrompt.includes('note')) {
       return {
         content: "I'll check your notes.",
-        tool_use: [
+        toolCalls: [
           {
             id: 'call_1',
             name: 'notes-server_list_notes',
-            input: {}
+            arguments: {}
           }
         ]
       };
     }
     
     return {
-      content: `I understand you said: "${prompt}". I'm running in demo mode. Try asking me about the weather, to do some math, or to check files! Add your Anthropic API key in settings for real Claude integration.`,
-      tool_use: []
+      content: `I understand you said: "${prompt}". I'm running in demo mode. Try asking me about the weather, to do some math, or to check files! Configure an LLM provider in settings for real AI integration.`,
+      toolCalls: []
     };
   };
 
-  const callAnthropicAPI = async (prompt: string, conversationHistory: any[] = []): Promise<any> => {
-    // Check if API key is provided - if not, use demo mode
-    if (!config.apiKey) {
+  const callLLMAPI = async (prompt: string, conversationHistory: LLMMessage[] = []): Promise<any> => {
+    // Check if provider is available - if not, use demo mode
+    if (!activeProvider || !hasValidActiveProvider) {
       return callDemoAPI(prompt);
     }
 
     try {
-      const anthropic = new Anthropic({
-        apiKey: config.apiKey,
-        dangerouslyAllowBrowser: true // Note: In production, API calls should go through your backend
-      });
-
-      const availableTools = convertToAnthropicTools();
+      const llmTools = convertToLLMTools();
       
       // Build messages array from conversation history or just the current prompt
-      const messages = conversationHistory.length > 0 ? conversationHistory : [
+      const messages: LLMMessage[] = conversationHistory.length > 0 ? conversationHistory : [
         {
           role: 'user',
           content: prompt
         }
       ];
       
-      const message = await anthropic.messages.create({
-        model: config.model,
-        max_tokens: config.maxTokens,
-        messages: messages,
-        tools: availableTools.length > 0 ? availableTools : undefined,
-      });
+      const response = await activeProvider.generateResponse(
+        messages,
+        llmTools.length > 0 ? llmTools : undefined
+      );
 
       // Debug: Log the full response
-      console.log('Anthropic API Response:', JSON.stringify(message, null, 2));
-      console.log('Message content:', message.content);
-
-      // Process the response - check for both text and tool use
-      const textParts = message.content.filter(c => c.type === 'text').map(c => c.text);
-      const toolParts = message.content.filter(c => c.type === 'tool_use');
-      
-      console.log('Text parts:', textParts);
-      console.log('Tool parts:', toolParts);
+      console.log('LLM API Response:', JSON.stringify(response, null, 2));
       
       return {
-        content: textParts.join('\n') || "I'll help you with that.",
-        tool_use: toolParts.map(tool => ({
-          id: tool.id,
-          name: tool.name,
-          input: tool.input
-        }))
+        content: response.content || "I'll help you with that.",
+        toolCalls: response.toolCalls || []
       };
     } catch (error: any) {
-      console.error('Anthropic API Error:', error);
-      
-      // Handle specific API errors
-      if (error?.status === 401) {
-        throw new Error('Invalid API key. Please check your Anthropic API key.');
-      } else if (error?.status === 404) {
-        throw new Error('Model not found. Please check the model name or try a different model.');
-      } else if (error?.status === 429) {
-        throw new Error('Rate limit exceeded. Please try again later.');
-      } else if (error?.status === 400) {
-        throw new Error('Bad request. Please check your configuration and try again.');
-      } else {
-        throw new Error(`API Error: ${error?.message || 'Unknown error occurred'}`);
-      }
+      console.error('LLM API Error:', error);
+      throw error;
     }
   };
 
@@ -328,7 +257,7 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
         const [serverName, ...toolNameParts] = toolCall.name.split('_');
         const toolName = toolNameParts.join('_');
         
-        const result = await onExecuteTool(serverName, toolName, toolCall.input);
+        const result = await onExecuteTool(serverName, toolName, toolCall.arguments);
         results.push({
           toolCallId: toolCall.id,
           result
@@ -360,15 +289,15 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
     setIsLoading(true);
     
     try {
-      // Step 1: Send query to Claude with tool descriptions
-      const response = await callAnthropicAPI(userMessage.content);
+      // Step 1: Send query to LLM with tool descriptions
+      const response = await callLLMAPI(userMessage.content);
       
       // Handle tool calls if present
-      if (response.tool_use && response.tool_use.length > 0) {
-        const toolCalls: ToolCall[] = response.tool_use.map((tool: any) => ({
+      if (response.toolCalls && response.toolCalls.length > 0) {
+        const toolCalls: ToolCall[] = response.toolCalls.map((tool: any) => ({
           id: tool.id,
           name: tool.name,
-          arguments: tool.input,
+          arguments: tool.arguments,
           serverName: tool.name.split('_')[0]
         }));
         
@@ -384,7 +313,7 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
         setMessages(prev => [...prev, assistantMessage]);
         
         // Step 2: Execute tool calls through servers
-        const toolResults = await executeToolCalls(response.tool_use);
+        const toolResults = await executeToolCalls(response.toolCalls);
         
         // Update message with tool results
         setMessages(prev => prev.map(msg => 
@@ -393,10 +322,10 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
             : msg
         ));
         
-        // Step 3: Send results back to Claude for natural language response
-        if (config.apiKey) {
-          // For real Anthropic API, build proper conversation history with tool results
-          const conversationHistory = [
+        // Step 3: Send results back to LLM for natural language response
+        if (activeProvider && hasValidActiveProvider) {
+          // For real LLM API, build proper conversation history with tool results
+          const conversationHistory: LLMMessage[] = [
             {
               role: 'user',
               content: userMessage.content
@@ -405,21 +334,21 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
               role: 'assistant',
               content: response.content.length > 0 ? [
                 { type: 'text', text: response.content },
-                ...response.tool_use.map((tool: any) => ({
+                ...response.toolCalls.map((tool: any) => ({
                   type: 'tool_use',
                   id: tool.id,
                   name: tool.name,
-                  input: tool.input
+                  input: tool.arguments
                 }))
-              ] : response.tool_use.map((tool: any) => ({
+              ] : response.toolCalls.map((tool: any) => ({
                 type: 'tool_use',
                 id: tool.id,
                 name: tool.name,
-                input: tool.input
+                input: tool.arguments
               }))
             },
             {
-              role: 'user',
+              role: 'tool',
               content: toolResults.map(result => ({
                 type: 'tool_result',
                 tool_use_id: result.toolCallId,
@@ -430,8 +359,8 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
             }
           ];
           
-          // Get Claude's natural language response
-          const finalResponse = await callAnthropicAPI('', conversationHistory);
+          // Get LLM's natural language response
+          const finalResponse = await callLLMAPI('', conversationHistory);
           
           const finalMessage: Message = {
             id: `msg_${Date.now()}_final`,
@@ -450,7 +379,7 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
           
           if (successfulResults.length > 0) {
             finalResponse += "Great! Here's what I found:\n\n";
-            successfulResults.forEach((result, index) => {
+            successfulResults.forEach((result) => {
               const toolCall = toolCalls.find(tc => tc.id === result.toolCallId);
               if (toolCall) {
                 const toolName = toolCall.name.split('_').pop();
@@ -520,7 +449,19 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
     }
   };
 
+  const handleNewProvider = () => {
+    const newProvider = createProviderFromPreset('ollama-local');
+    newProvider.id = `provider_${Date.now()}`;
+    addProvider(newProvider);
+    setEditingProvider(newProvider.id);
+  };
+
+  const handleTestProvider = async (config: any) => {
+    return await testProvider(config);
+  };
+
   const connectedServers = servers.filter(s => s.connected);
+  const activeProviderConfig = providers.find(p => p.id === activeProviderId);
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -538,86 +479,159 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
         <button
           onClick={() => setShowConfig(!showConfig)}
           className={`px-3 py-1 text-sm rounded hover:bg-gray-200 ${
-            configLoadedFromStorage 
+            hasValidActiveProvider 
               ? 'bg-green-100 text-green-700 border border-green-200' 
               : 'bg-gray-100 text-gray-700'
           }`}
         >
-          ⚙️ Config {configLoadedFromStorage && '•'}
+          ⚙️ Config {hasValidActiveProvider && '•'}
         </button>
       </div>
 
       {/* Configuration Panel */}
       {showConfig && (
         <div className="mb-6 p-4 border rounded-lg bg-gray-50">
-          <h4 className="font-medium mb-3">Anthropic API Configuration</h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                API Key
-              </label>
-              <input
-                type="password"
-                value={config.apiKey}
-                onChange={(e) => setConfig(prev => ({ ...prev, apiKey: e.target.value }))}
-                placeholder="sk-ant-..."
-                className="w-full text-sm border border-gray-300 rounded px-2 py-1"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Model
-              </label>
+          <h4 className="font-medium mb-3">LLM Provider Configuration</h4>
+          
+          {/* Provider Selection */}
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Active Provider
+            </label>
+            <div className="flex items-center space-x-2">
               <select
-                value={config.model}
-                onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
-                className="w-full text-sm border border-gray-300 rounded px-2 py-1"
+                value={activeProviderId || ''}
+                onChange={(e) => setActiveProvider(e.target.value || null)}
+                className="flex-1 text-sm border border-gray-300 rounded px-2 py-1"
               >
-                <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-                <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
-                <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+                <option value="">Select a provider...</option>
+                {providers.map(provider => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name} ({provider.type})
+                  </option>
+                ))}
               </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Max Tokens
-              </label>
-              <input
-                type="number"
-                value={config.maxTokens}
-                onChange={(e) => setConfig(prev => ({ ...prev, maxTokens: parseInt(e.target.value) || 4096 }))}
-                className="w-full text-sm border border-gray-300 rounded px-2 py-1"
-              />
+              <button
+                onClick={handleNewProvider}
+                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                + Add
+              </button>
             </div>
           </div>
-          <div className="mt-3 text-xs text-gray-500">
-            <p className="mb-1">
-              <strong>Real Anthropic Integration:</strong> Enter your API key to use actual Claude models with MCP tools.
-            </p>
-            <p className="mb-1">
-              <strong>Demo Mode:</strong> Leave API key empty for simulated responses (no API calls).
-            </p>
-            {configLoadedFromStorage && (
-              <div className="flex items-center justify-between">
-                <p className="text-green-600">
-                  ✅ <strong>Settings restored</strong> from previous session
-                </p>
-                <button
-                  onClick={() => {
-                    setConfig({
-                      apiKey: '',
-                      model: 'claude-3-5-sonnet-20241022',
-                      maxTokens: 4096,
-                    });
-                    setConfigLoadedFromStorage(false);
-                    localStorage.removeItem('anthropic-config');
-                  }}
-                  className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
-                >
-                  Clear Saved Settings
-                </button>
+
+          {/* Active Provider Status */}
+          {activeProviderConfig && (
+            <div className="mb-4 p-3 bg-white rounded border">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="font-medium text-sm">{activeProviderConfig.name}</div>
+                  <div className="text-xs text-gray-600">
+                    {activeProviderConfig.type} • {activeProviderConfig.model}
+                    {activeProviderConfig.baseUrl && ` • ${activeProviderConfig.baseUrl}`}
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className={`w-2 h-2 rounded-full ${
+                    hasValidActiveProvider ? 'bg-green-500' : 'bg-red-500'
+                  }`}></span>
+                  <button
+                    onClick={() => setEditingProvider(activeProviderConfig.id)}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (providers.length === 1) {
+                        alert('Cannot delete the last provider. Add another provider first.');
+                        return;
+                      }
+                      if (confirm(`Are you sure you want to delete "${activeProviderConfig.name}"?`)) {
+                        removeProvider(activeProviderConfig.id);
+                      }
+                    }}
+                    disabled={providers.length === 1}
+                    className={`text-xs ${
+                      providers.length === 1
+                        ? 'text-gray-400 cursor-not-allowed'
+                        : 'text-red-600 hover:text-red-800'
+                    }`}
+                    title={providers.length === 1 ? 'Cannot delete the last provider' : undefined}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
-            )}
+            </div>
+          )}
+
+          {/* All Providers List */}
+          {providers.length > 1 && (
+            <div className="mb-4">
+              <h5 className="text-xs font-medium text-gray-700 mb-2">All Providers ({providers.length})</h5>
+              <div className="space-y-2">
+                {providers.map(provider => (
+                  <div key={provider.id} className="flex items-center justify-between p-2 bg-white rounded border text-xs">
+                    <div className="flex-1">
+                      <div className="font-medium">{provider.name}</div>
+                      <div className="text-gray-600">{provider.type} • {provider.model}</div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className={`w-2 h-2 rounded-full ${
+                        provider.id === activeProviderId ? 'bg-green-500' : 'bg-gray-300'
+                      }`} title={provider.id === activeProviderId ? 'Active' : 'Inactive'}></span>
+                      <button
+                        onClick={() => setActiveProvider(provider.id)}
+                        disabled={provider.id === activeProviderId}
+                        className={`px-2 py-1 rounded text-xs ${
+                          provider.id === activeProviderId
+                            ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                            : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                        }`}
+                      >
+                        {provider.id === activeProviderId ? 'Active' : 'Activate'}
+                      </button>
+                      <button
+                        onClick={() => setEditingProvider(provider.id)}
+                        className="px-2 py-1 text-blue-600 hover:text-blue-800"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (providers.length === 1) {
+                            alert('Cannot delete the last provider. Add another provider first.');
+                            return;
+                          }
+                          if (confirm(`Are you sure you want to delete "${provider.name}"?`)) {
+                            removeProvider(provider.id);
+                          }
+                        }}
+                        disabled={providers.length === 1}
+                        className={`px-2 py-1 ${
+                          providers.length === 1
+                            ? 'text-gray-400 cursor-not-allowed'
+                            : 'text-red-600 hover:text-red-800'
+                        }`}
+                        title={providers.length === 1 ? 'Cannot delete the last provider' : undefined}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="text-xs text-gray-500">
+            <p className="mb-1">
+              <strong>Multi-LLM Support:</strong> Configure any LLM provider including local models.
+            </p>
+            <p className="mb-1">
+              <strong>Demo Mode:</strong> Leave unconfigured for simulated responses (no API calls).
+            </p>
           </div>
         </div>
       )}
@@ -630,6 +644,11 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
           }`}>
             {connectedServers.length} servers connected
           </span>
+          <span className={`px-2 py-1 rounded text-xs ${
+            hasValidActiveProvider ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+          }`}>
+            {hasValidActiveProvider ? `${activeProviderConfig?.name} ready` : 'Demo mode'}
+          </span>
           <span className="text-gray-600">
             {toolsLoading ? (
               <span className="flex items-center space-x-1">
@@ -637,7 +656,7 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
                 <span>Loading tools...</span>
               </span>
             ) : (
-              `${getAvailableTools().length} tools available ${availableTools.length > 0 ? '(dynamic)' : ''}`
+              `${availableTools.length} tools available ${availableTools.length > 0 ? '(dynamic)' : ''}`
             )}
           </span>
         </div>
@@ -762,6 +781,16 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
         <div className="mt-2 text-sm text-red-600">
           Connect to MCP servers to enable AI agent functionality
         </div>
+      )}
+
+      {/* Provider Configuration Modal */}
+      {editingProvider && (
+        <LLMProviderConfig
+          config={providers.find(p => p.id === editingProvider)!}
+          onChange={(config) => updateProvider(editingProvider, config)}
+          onTest={handleTestProvider}
+          onClose={() => setEditingProvider(null)}
+        />
       )}
     </div>
   );

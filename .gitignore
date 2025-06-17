@@ -98,3 +98,6 @@ jspm_packages/
 # Database files
 *.db
 *.sqlite
+
+# User configuration files
+client/server-configs.json

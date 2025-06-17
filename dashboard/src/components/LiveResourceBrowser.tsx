@@ -40,7 +40,7 @@ export const LiveResourceBrowser: React.FC<Props> = ({
 
   // Automatically fetch resources when server is selected
   useEffect(() => {
-    if (selectedServer && !resourceData[selectedServer] && !resourceData[selectedServer]?.loading) {
+    if (selectedServer && !resourceData[selectedServer]) {
       refreshServerResources(selectedServer);
     }
   }, [selectedServer]);

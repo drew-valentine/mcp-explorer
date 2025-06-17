@@ -4,7 +4,6 @@ import { ConnectionStatus } from './components/ConnectionStatus';
 import { ServerStatus } from './components/ServerStatus';
 import { MessageFlow } from './components/MessageFlow';
 import { NetworkVisualization } from './components/NetworkVisualization';
-import { ResourceBrowser } from './components/ResourceBrowser';
 import { ProtocolInspector } from './components/ProtocolInspector';
 import { ToolExecutor } from './components/ToolExecutor';
 import { LiveResourceBrowser } from './components/LiveResourceBrowser';

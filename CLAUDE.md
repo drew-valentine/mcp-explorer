@@ -41,6 +41,8 @@ npm run clean
   - `notes-server.ts`: Note-taking with SQLite persistence
   - `weather-server.ts`: Weather data and forecasting
 - **client/**: MCP client that connects to multiple servers
+  - `server-configs.json`: User-specific server configurations (gitignored)
+  - `server-configs.example.json`: Template for server configurations
 - **dashboard/**: React visualization dashboard with real-time updates
 - **shared/**: Common TypeScript interfaces and types
 - **data/**: Sample files and SQLite database

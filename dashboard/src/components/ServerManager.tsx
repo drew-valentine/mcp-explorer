@@ -41,6 +41,7 @@ export const ServerManager: React.FC<Props> = ({
     enabled: true,
     isBuiltIn: false,
   });
+  const [argsString, setArgsString] = useState('');
   const [testingConnection, setTestingConnection] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -98,7 +99,7 @@ export const ServerManager: React.FC<Props> = ({
       description: formData.description || '',
       connectionType: formData.connectionType!,
       command: formData.command,
-      args: formData.args || [],
+      args: argsString ? argsString.split(' ').filter(arg => arg.trim()) : [],
       url: formData.url,
       enabled: formData.enabled!,
       isBuiltIn: false,
@@ -116,6 +117,7 @@ export const ServerManager: React.FC<Props> = ({
         enabled: true,
         isBuiltIn: false,
       });
+      setArgsString('');
       setShowAddForm(false);
       setFormErrors({});
     } catch (error) {
@@ -295,11 +297,8 @@ export const ServerManager: React.FC<Props> = ({
                     </label>
                     <input
                       type="text"
-                      value={formData.args?.join(' ') || ''}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        args: e.target.value.split(' ').filter(arg => arg.trim()) 
-                      }))}
+                      value={argsString}
+                      onChange={(e) => setArgsString(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="server.js --port 3000 (or: run -i --rm mcp/time for Docker)"
                     />
