@@ -9,36 +9,46 @@ An interactive demonstration of the Model Context Protocol (MCP) with real-time 
 - **5 comprehensive tabs** for exploring different aspects of MCP
 - **Live message flow visualization** with D3.js network graphs
 - **Dynamic capability discovery** from actual MCP servers
+<img width="1624" alt="Screenshot 2025-06-17 at 5 18 29 PM" src="https://github.com/user-attachments/assets/6b70550c-63b6-4ca5-a6f5-921ba300a12b" />
 
 ### 🤖 **AI Agent Integration**
 - **Anthropic Claude integration** with persistent API key storage
+- **Local LLM Support** so data never leaves your machine
 - **Dynamic tool discovery** and execution through MCP servers
 - **Real-time tool calling** with parameter validation
 - **Demo mode** when no API key is provided
+<img width="1624" alt="Screenshot 2025-06-17 at 5 20 19 PM" src="https://github.com/user-attachments/assets/eb7872b1-405b-4ea1-90b9-7a8cb8c1a0d6" />
+<img width="1376" alt="Screenshot 2025-06-17 at 5 28 09 PM" src="https://github.com/user-attachments/assets/00e81516-6462-4b4e-a809-0481c43895f8" />
 
 ### ⚡ **Tool Execution**
 - **Manual tool execution** with schema-based parameter generation
 - **JSON parameter editor** with syntax validation
 - **Execution history** with success/error tracking
 - **Sample parameter generation** for quick testing
+<img width="1624" alt="Screenshot 2025-06-17 at 5 20 44 PM" src="https://github.com/user-attachments/assets/f3c00e3e-6b53-40df-a6e1-1fde6cdc577f" />
 
 ### 📂 **Resource Management**
 - **Live resource browsing** with auto-refresh capabilities
 - **Real-time content preview** for various file types
 - **Resource metadata display** (size, type, modification time)
 - **Cross-server resource discovery**
+<img width="1624" alt="Screenshot 2025-06-17 at 5 21 15 PM" src="https://github.com/user-attachments/assets/c578ec56-c33c-4d8c-83d3-70ba68ccb503" />
 
 ### 🔍 **Capability Explorer**
 - **Dynamic capability discovery** from connected MCP servers
 - **Interactive schema exploration** with examples
 - **Grid and list view modes** for different perspectives
 - **Real-time statistics** on tools, resources, and prompts
+<img width="1624" alt="Screenshot 2025-06-17 at 5 21 28 PM" src="https://github.com/user-attachments/assets/d594924a-7314-4535-a64d-4086cf61e4a7" />
+
 
 ### 🌐 **Network Visualization**
 - **D3.js-powered network graph** showing client-server connections
 - **Real-time message flow** with directional arrows and animations
 - **Color-coded message types** (requests, responses, errors)
 - **Interactive node dragging** and zoom capabilities
+<img width="1624" alt="Screenshot 2025-06-17 at 5 21 35 PM" src="https://github.com/user-attachments/assets/dbf77e44-0e00-42d5-9271-d779e24fb2d8" />
+
 
 ## 🚀 Quick Start
 
