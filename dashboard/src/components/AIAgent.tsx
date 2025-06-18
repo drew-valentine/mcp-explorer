@@ -307,144 +307,112 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
     setIsLoading(true);
     
     try {
-      // Step 1: Send query to LLM with tool descriptions
-      const response = await callLLMAPI(userMessage.content);
+      // Initialize conversation history for tool chaining
+      let conversationHistory: LLMMessage[] = [
+        {
+          role: 'user',
+          content: userMessage.content
+        }
+      ];
+
+      // Tool calling loop - continue until no more tool calls are made
+      let maxIterations = 5; // Prevent infinite loops
+      let iteration = 0;
       
-      // Handle tool calls if present
-      if (response.toolCalls && response.toolCalls.length > 0) {
-        const toolCalls: ToolCall[] = response.toolCalls.map((tool: any) => ({
-          id: tool.id,
-          name: tool.name,
-          arguments: tool.arguments,
-          serverName: tool.name.split('_')[0]
-        }));
+      while (iteration < maxIterations) {
+        console.log(`🔄 Tool calling iteration ${iteration + 1}`);
         
-        // Show assistant message with tool calls
-        const assistantMessage: Message = {
-          id: `msg_${Date.now()}_assistant`,
-          role: 'assistant',
-          content: response.content,
-          timestamp: Date.now(),
-          toolCalls,
-        };
+        // Send current conversation to LLM
+        const response = await callLLMAPI('', conversationHistory);
         
-        setMessages(prev => [...prev, assistantMessage]);
-        
-        // Step 2: Execute tool calls through servers
-        const toolResults = await executeToolCalls(response.toolCalls);
-        
-        // Update message with tool results
-        setMessages(prev => prev.map(msg => 
-          msg.id === assistantMessage.id 
-            ? { ...msg, toolResults }
-            : msg
-        ));
-        
-        // Step 3: Send results back to LLM for natural language response
-        if (activeProvider && hasValidActiveProvider) {
-          // For real LLM API, build proper conversation history with tool results
-          const conversationHistory: LLMMessage[] = [
-            {
-              role: 'user',
-              content: userMessage.content
-            },
-            {
-              role: 'assistant',
-              content: response.content.length > 0 ? [
-                { type: 'text', text: response.content },
-                ...response.toolCalls.map((tool: any) => ({
-                  type: 'tool_use',
-                  id: tool.id,
-                  name: tool.name,
-                  input: tool.arguments
-                }))
-              ] : response.toolCalls.map((tool: any) => ({
+        // Handle tool calls if present
+        if (response.toolCalls && response.toolCalls.length > 0) {
+          console.log(`🔧 LLM wants to call ${response.toolCalls.length} tool(s):`, response.toolCalls.map((t: any) => t.name));
+          
+          const toolCalls: ToolCall[] = response.toolCalls.map((tool: any) => ({
+            id: tool.id,
+            name: tool.name,
+            arguments: tool.arguments,
+            serverName: tool.name.split('_')[0]
+          }));
+
+          // Show assistant message with tool calls
+          const assistantMessage: Message = {
+            id: `msg_${Date.now()}_assistant_${iteration}`,
+            role: 'assistant',
+            content: response.content,
+            timestamp: Date.now(),
+            toolCalls,
+          };
+          
+          setMessages(prev => [...prev, assistantMessage]);
+
+          // Execute tool calls
+          const toolResults = await executeToolCalls(response.toolCalls);
+
+          // Update message with tool results
+          setMessages(prev => prev.map(msg => 
+            msg.id === assistantMessage.id 
+              ? { ...msg, toolResults }
+              : msg
+          ));
+
+          // Add to conversation history for next iteration
+          conversationHistory.push({
+            role: 'assistant',
+            content: response.content.length > 0 ? [
+              { type: 'text', text: response.content },
+              ...response.toolCalls.map((tool: any) => ({
                 type: 'tool_use',
                 id: tool.id,
                 name: tool.name,
                 input: tool.arguments
               }))
-            },
-            {
-              role: 'tool',
-              content: toolResults.map(result => ({
-                type: 'tool_result',
-                tool_use_id: result.toolCallId,
-                content: result.error 
-                  ? `Error: ${result.error}`
-                  : JSON.stringify(result.result, null, 2)
-              }))
-            }
-          ];
-          
-          // Get LLM's natural language response
-          const finalResponse = await callLLMAPI('', conversationHistory);
-          
-          const finalMessage: Message = {
-            id: `msg_${Date.now()}_final`,
-            role: 'assistant',
-            content: finalResponse.content,
-            timestamp: Date.now(),
-          };
-          
-          setMessages(prev => [...prev, finalMessage]);
+            ] : response.toolCalls.map((tool: any) => ({
+              type: 'tool_use',
+              id: tool.id,
+              name: tool.name,
+              input: tool.arguments
+            }))
+          });
+
+          conversationHistory.push({
+            role: 'tool',
+            content: toolResults.map(result => ({
+              type: 'tool_result',
+              tool_use_id: result.toolCallId,
+              content: result.error 
+                ? `Error: ${result.error}`
+                : JSON.stringify(result.result, null, 2)
+            }))
+          });
+
+          iteration++;
         } else {
-          // Demo mode - generate a simple natural language response
-          const successfulResults = toolResults.filter(r => !r.error);
-          const failedResults = toolResults.filter(r => r.error);
+          console.log(`✅ LLM provided final response (no more tool calls)`);
           
-          let finalResponse = '';
-          
-          if (successfulResults.length > 0) {
-            finalResponse += "Great! Here's what I found:\n\n";
-            successfulResults.forEach((result) => {
-              const toolCall = toolCalls.find(tc => tc.id === result.toolCallId);
-              if (toolCall) {
-                const toolName = toolCall.name.split('_').pop();
-                if (toolName === 'get_weather') {
-                  const data = result.result;
-                  finalResponse += `🌤️ Weather: It's ${data.temperature}°F in ${data.location} with ${data.condition}.\n`;
-                } else if (toolName === 'add' || toolName === 'multiply') {
-                  finalResponse += `🔢 Calculation: ${toolCall.arguments.a} ${toolName === 'add' ? '+' : '×'} ${toolCall.arguments.b} = ${result.result.result}\n`;
-                } else if (toolName === 'list_files') {
-                  const files = result.result.files || [];
-                  finalResponse += `📁 Files: Found ${files.length} files: ${files.map((f: any) => f.name).join(', ')}\n`;
-                } else if (toolName === 'list_notes') {
-                  const notes = result.result.notes || [];
-                  finalResponse += `📝 Notes: Found ${notes.length} notes: ${notes.map((n: any) => n.title).join(', ')}\n`;
-                } else {
-                  finalResponse += `✅ ${toolName}: Operation completed successfully.\n`;
-                }
-              }
-            });
-          }
-          
-          if (failedResults.length > 0) {
-            finalResponse += "\n❌ Some operations failed:\n";
-            failedResults.forEach(result => {
-              finalResponse += `• ${result.error}\n`;
-            });
-          }
-          
+          // No more tool calls - this is the final response
           const finalMessage: Message = {
             id: `msg_${Date.now()}_final`,
             role: 'assistant',
-            content: finalResponse || "I've completed the requested operations.",
+            content: response.content,
             timestamp: Date.now(),
           };
           
           setMessages(prev => [...prev, finalMessage]);
+          break; // Exit the loop
         }
-      } else {
-        // Simple response without tools
-        const assistantMessage: Message = {
-          id: `msg_${Date.now()}_assistant`,
+      }
+
+      if (iteration >= maxIterations) {
+        console.warn(`⚠️ Tool calling loop reached maximum iterations (${maxIterations})`);
+        const warningMessage: Message = {
+          id: `msg_${Date.now()}_warning`,
           role: 'assistant',
-          content: response.content,
+          content: 'I reached the maximum number of tool calls for safety. The conversation may be incomplete.',
           timestamp: Date.now(),
         };
-        
-        setMessages(prev => [...prev, assistantMessage]);
+        setMessages(prev => [...prev, warningMessage]);
       }
     } catch (error) {
       const errorMessage: Message = {
