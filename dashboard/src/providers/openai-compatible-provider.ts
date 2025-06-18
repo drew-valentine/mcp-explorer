@@ -50,7 +50,9 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       const requestBody: any = {
         model: this.config.model,
         messages: openaiMessages,
-        max_tokens: Math.min(this.config.maxTokens || 4096, 512), // Smaller to leave room for tools
+        max_tokens: openaiTools && openaiTools.length > 0 
+          ? Math.max((this.config.maxTokens || 4096) - 500, 1000) // Leave buffer for tools but minimum 1000
+          : this.config.maxTokens || 4096, // Full limit when no tools
         stream: false,
       };
 
