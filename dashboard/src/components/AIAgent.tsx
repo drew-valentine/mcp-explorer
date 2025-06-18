@@ -40,7 +40,16 @@ interface MCPTool {
 }
 
 export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Initialize messages from localStorage
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const saved = localStorage.getItem('ai-agent-chat-history');
+      return saved ? JSON.parse(saved) : [];
+    } catch (error) {
+      console.warn('Failed to load chat history:', error);
+      return [];
+    }
+  });
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
@@ -69,6 +78,15 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
 
   useEffect(() => {
     scrollToBottom();
+  }, [messages]);
+
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('ai-agent-chat-history', JSON.stringify(messages));
+    } catch (error) {
+      console.warn('Failed to save chat history:', error);
+    }
   }, [messages]);
 
   // Track the last fetched server set to prevent duplicate fetches
@@ -449,6 +467,14 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
     }
   };
 
+  const handleClearChat = () => {
+    if (messages.length === 0) return;
+    
+    if (confirm('Are you sure you want to clear the chat history? This cannot be undone.')) {
+      setMessages([]);
+    }
+  };
+
   const handleNewProvider = () => {
     const newProvider = createProviderFromPreset('ollama-local');
     newProvider.id = `provider_${Date.now()}`;
@@ -476,16 +502,30 @@ export const AIAgent: React.FC<Props> = ({ servers, onExecuteTool, onListTools }
           </p>
         </div>
         
-        <button
-          onClick={() => setShowConfig(!showConfig)}
-          className={`px-3 py-1 text-sm rounded hover:bg-gray-200 ${
-            hasValidActiveProvider 
-              ? 'bg-green-100 text-green-700 border border-green-200' 
-              : 'bg-gray-100 text-gray-700'
-          }`}
-        >
-          ⚙️ Config {hasValidActiveProvider && '•'}
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={handleClearChat}
+            disabled={messages.length === 0}
+            className={`px-3 py-1 text-sm rounded hover:bg-gray-200 ${
+              messages.length > 0
+                ? 'bg-red-100 text-red-700 border border-red-200'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            }`}
+            title={messages.length > 0 ? 'Clear chat history' : 'No messages to clear'}
+          >
+            🗑️ Clear
+          </button>
+          <button
+            onClick={() => setShowConfig(!showConfig)}
+            className={`px-3 py-1 text-sm rounded hover:bg-gray-200 ${
+              hasValidActiveProvider 
+                ? 'bg-green-100 text-green-700 border border-green-200' 
+                : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            ⚙️ Config {hasValidActiveProvider && '•'}
+          </button>
+        </div>
       </div>
 
       {/* Configuration Panel */}
